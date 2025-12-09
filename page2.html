@@ -7,33 +7,30 @@
     <link rel="stylesheet" href="styles.css">
     <!-- Firebase Scripts -->
     <script type="module">
-      // Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getFirestore, collection, doc, setDoc, getDoc, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyCOxCavlsWWB662RO15X4iDcSZFrtH2uTI",
-  authDomain: "christmasgiftexchange-8d38e.firebaseapp.com",
-  projectId: "christmasgiftexchange-8d38e",
-  storageBucket: "christmasgiftexchange-8d38e.firebasestorage.app",
-  messagingSenderId: "184610390168",
-  appId: "1:184610390168:web:fc87da7d2c88db285790ed",
-  measurementId: "G-XYBRD248ES"
-};
+        // Replace with your Firebase config
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+        let db = null;
+        try {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            console.log("Firebase initialized successfully.");
+        } catch (error) {
+            console.error("Firebase init failed:", error);
+            alert("Firebase not set up. Using local storage only (no shared data).");
+        }
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-
-        window.db = db; // Make db available globally for the script below
+        window.db = db;
     </script>
 </head>
 <body>
@@ -56,7 +53,7 @@ const analytics = getAnalytics(app);
         </div>
     </div>
     <script>
-        // Load current user from localStorage (for session)
+        // Load current user
         let currentUser = JSON.parse(localStorage.getItem('currentUser'));
         if (!currentUser) {
             alert('No user data found. Please register first.');
@@ -65,50 +62,58 @@ const analytics = getAnalytics(app);
         
         document.getElementById('userName').textContent = currentUser.name;
         
-        // Check if history was open on last visit
+        // Check history visibility
         const historyVisible = localStorage.getItem('historyVisible') === 'true';
         const historyList = document.getElementById('historyList');
         if (historyVisible) {
             historyList.classList.remove('hidden');
         }
         
-        // Function to load and display all users from Firebase (real-time)
+        // Load history
         function loadHistory() {
             const userGrid = document.getElementById('userGrid');
             userGrid.innerHTML = '<p>Loading...</p>';
             
             if (window.db) {
-                // Real-time listener for all users
-                onSnapshot(collection(window.db, 'users'), (snapshot) => {
-                    userGrid.innerHTML = '';
-                    snapshot.forEach((doc) => {
-                        const user = doc.data();
-                        const userCard = document.createElement('div');
-                        userCard.className = 'user-card';
-                        userCard.innerHTML = `
-                            <h4>${user.name}</h4>
-                            <p><strong>Wishlist:</strong> ${user.wishlist || 'None yet'}</p>
-                        `;
-                        userGrid.appendChild(userCard);
+                try {
+                    onSnapshot(collection(window.db, 'users'), (snapshot) => {
+                        userGrid.innerHTML = '';
+                        snapshot.forEach((doc) => {
+                            const user = doc.data();
+                            const userCard = document.createElement('div');
+                            userCard.className = 'user-card';
+                            userCard.innerHTML = `
+                                <h4>${user.name}</h4>
+                                <p><strong>Wishlist:</strong> ${user.wishlist || 'None yet'}</p>
+                            `;
+                            userGrid.appendChild(userCard);
+                        });
                     });
-                });
+                } catch (error) {
+                    console.error("Firebase load error:", error);
+                    alert("Firebase error. Falling back to local.");
+                    loadLocalHistory();
+                }
             } else {
-                // Fallback to localStorage if Firebase not set up
-                const users = JSON.parse(localStorage.getItem('christmasUsers')) || [];
-                userGrid.innerHTML = '';
-                users.forEach(user => {
-                    const userCard = document.createElement('div');
-                    userCard.className = 'user-card';
-                    userCard.innerHTML = `
-                        <h4>${user.name}</h4>
-                        <p><strong>Wishlist:</strong> ${user.wishlist || 'None yet'}</p>
-                    `;
-                    userGrid.appendChild(userCard);
-                });
+                loadLocalHistory();
             }
         }
         
-        // Load history if visible on page load
+        function loadLocalHistory() {
+            const users = JSON.parse(localStorage.getItem('christmasUsers')) || [];
+            const userGrid = document.getElementById('userGrid');
+            userGrid.innerHTML = '';
+            users.forEach(user => {
+                const userCard = document.createElement('div');
+                userCard.className = 'user-card';
+                userCard.innerHTML = `
+                    <h4>${user.name}</h4>
+                    <p><strong>Wishlist:</strong> ${user.wishlist || 'None yet'}</p>
+                `;
+                userGrid.appendChild(userCard);
+            });
+        }
+        
         if (historyVisible) {
             loadHistory();
         }
@@ -119,19 +124,29 @@ const analytics = getAnalytics(app);
             currentUser.wishlist = wishlistText;
             localStorage.setItem('currentUser', JSON.stringify(currentUser));
             
-            if (window.db) {
-                // Save to Firebase
-                await setDoc(doc(window.db, 'users', currentUser.email), currentUser);
-                alert('Wishlist saved and synced!');
-            } else {
-                // Fallback to localStorage
+            try {
+                if (window.db) {
+                    await setDoc(doc(window.db, 'users', currentUser.email), currentUser);
+                    alert('Wishlist saved and synced!');
+                } else {
+                    let users = JSON.parse(localStorage.getItem('christmasUsers')) || [];
+                    const index = users.findIndex(u => u.email === currentUser.email);
+                    if (index !== -1) {
+                        users[index] = currentUser;
+                        localStorage.setItem('christmasUsers', JSON.stringify(users));
+                    }
+                    alert('Wishlist saved locally!');
+                }
+            } catch (error) {
+                console.error("Save error:", error);
+                alert("Save failed. Using local. Details: " + error.message);
+                // Fallback
                 let users = JSON.parse(localStorage.getItem('christmasUsers')) || [];
                 const index = users.findIndex(u => u.email === currentUser.email);
                 if (index !== -1) {
                     users[index] = currentUser;
                     localStorage.setItem('christmasUsers', JSON.stringify(users));
                 }
-                alert('Wishlist saved locally!');
             }
         });
         
@@ -141,7 +156,7 @@ const analytics = getAnalytics(app);
             const isHidden = historyList.classList.contains('hidden');
             if (isHidden) {
                 historyList.classList.remove('hidden');
-                loadHistory(); // Load data when opening
+                loadHistory();
                 localStorage.setItem('historyVisible', 'true');
             } else {
                 historyList.classList.add('hidden');
@@ -149,22 +164,26 @@ const analytics = getAnalytics(app);
             }
         });
         
-        // Load current user's wishlist from Firebase on page load
-        if (window.db) {
-            const docRef = doc(window.db, 'users', currentUser.email);
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                document.getElementById('wishlist').value = data.wishlist || '';
-                currentUser = data; // Update local
-                localStorage.setItem('currentUser', JSON.stringify(currentUser));
-            } else {
-                // If not in Firebase, save current user
-                await setDoc(doc(window.db, 'users', currentUser.email), currentUser);
+        // Load user's wishlist on page load
+        (async () => {
+            try {
+                if (window.db) {
+                    const docRef = doc(window.db, 'users', currentUser.email);
+                    const docSnap = await getDoc(docRef);
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        document.getElementById('wishlist').value = data.wishlist || '';
+                        currentUser = data;
+                        localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                    } else {
+                        await setDoc(doc(window.db, 'users', currentUser.email), currentUser);
+                    }
+                }
+            } catch (error) {
+                console.error("Load wishlist error:", error);
+                // No alert, just use local
             }
-        }
+        })();
     </script>
 </body>
 </html>
-
-
