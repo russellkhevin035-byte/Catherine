@@ -5,6 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Your Gift Exchange Dashboard</title>
     <link rel="stylesheet" href="styles.css">
+    <!-- Firebase Scripts -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getFirestore, collection, doc, setDoc, getDoc, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+        // Replace with your Firebase config from console
+        const firebaseConfig = {
+  apiKey: "AIzaSyB4sGDwJTG0DnbeZzClo8QUt_uJ-RbBsdM",
+  authDomain: "catherine-c9754.firebaseapp.com",
+  projectId: "catherine-c9754",
+  storageBucket: "catherine-c9754.firebasestorage.app",
+  messagingSenderId: "716446543714",
+  appId: "1:716446543714:web:f4f8ead2fee0434d64c63b",
+  measurementId: "G-1XZGTFX4PQ"
+};
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        window.db = db; // Make db available globally for the script below
+    </script>
 </head>
 <body>
     <div class="container">
@@ -26,40 +47,44 @@
         </div>
     </div>
     <script>
-        // Load current user
-        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+        // Load current user from localStorage (for session)
+        let currentUser = JSON.parse(localStorage.getItem('currentUser'));
         if (!currentUser) {
             alert('No user data found. Please register first.');
             window.location.href = 'index.html';
         }
         
         document.getElementById('userName').textContent = currentUser.name;
-        document.getElementById('wishlist').value = currentUser.wishlist;
         
-        // Submit wishlist on button click
-        document.getElementById('submitWishlist').addEventListener('click', function() {
-            const wishlistText = document.getElementById('wishlist').value;
-            currentUser.wishlist = wishlistText;
-            localStorage.setItem('currentUser', JSON.stringify(currentUser));
-            
-            // Update in users array
-            let users = JSON.parse(localStorage.getItem('christmasUsers')) || [];
-            const index = users.findIndex(u => u.email === currentUser.email);
-            if (index !== -1) {
-                users[index] = currentUser;
-                localStorage.setItem('christmasUsers', JSON.stringify(users));
-            }
-            
-            alert('Wishlist saved!');
-        });
-        
-        // History tap/click (no hover)
-        const historyBtn = document.getElementById('historyBtn');
+        // Check if history was open on last visit
+        const historyVisible = localStorage.getItem('historyVisible') === 'true';
         const historyList = document.getElementById('historyList');
-        const userGrid = document.getElementById('userGrid');
+        if (historyVisible) {
+            historyList.classList.remove('hidden');
+        }
         
-        function toggleHistory() {
-            if (historyList.classList.contains('hidden')) {
+        // Function to load and display all users from Firebase (real-time)
+        function loadHistory() {
+            const userGrid = document.getElementById('userGrid');
+            userGrid.innerHTML = '<p>Loading...</p>';
+            
+            if (window.db) {
+                // Real-time listener for all users
+                onSnapshot(collection(window.db, 'users'), (snapshot) => {
+                    userGrid.innerHTML = '';
+                    snapshot.forEach((doc) => {
+                        const user = doc.data();
+                        const userCard = document.createElement('div');
+                        userCard.className = 'user-card';
+                        userCard.innerHTML = `
+                            <h4>${user.name}</h4>
+                            <p><strong>Wishlist:</strong> ${user.wishlist || 'None yet'}</p>
+                        `;
+                        userGrid.appendChild(userCard);
+                    });
+                });
+            } else {
+                // Fallback to localStorage if Firebase not set up
                 const users = JSON.parse(localStorage.getItem('christmasUsers')) || [];
                 userGrid.innerHTML = '';
                 users.forEach(user => {
@@ -71,13 +96,64 @@
                     `;
                     userGrid.appendChild(userCard);
                 });
-                historyList.classList.remove('hidden');
-            } else {
-                historyList.classList.add('hidden');
             }
         }
         
-        historyBtn.addEventListener('click', toggleHistory); // Tap/click to show/hide
+        // Load history if visible on page load
+        if (historyVisible) {
+            loadHistory();
+        }
+        
+        // Submit wishlist
+        document.getElementById('submitWishlist').addEventListener('click', async function() {
+            const wishlistText = document.getElementById('wishlist').value;
+            currentUser.wishlist = wishlistText;
+            localStorage.setItem('currentUser', JSON.stringify(currentUser));
+            
+            if (window.db) {
+                // Save to Firebase
+                await setDoc(doc(window.db, 'users', currentUser.email), currentUser);
+                alert('Wishlist saved and synced!');
+            } else {
+                // Fallback to localStorage
+                let users = JSON.parse(localStorage.getItem('christmasUsers')) || [];
+                const index = users.findIndex(u => u.email === currentUser.email);
+                if (index !== -1) {
+                    users[index] = currentUser;
+                    localStorage.setItem('christmasUsers', JSON.stringify(users));
+                }
+                alert('Wishlist saved locally!');
+            }
+        });
+        
+        // History toggle
+        const historyBtn = document.getElementById('historyBtn');
+        historyBtn.addEventListener('click', function() {
+            const isHidden = historyList.classList.contains('hidden');
+            if (isHidden) {
+                historyList.classList.remove('hidden');
+                loadHistory(); // Load data when opening
+                localStorage.setItem('historyVisible', 'true');
+            } else {
+                historyList.classList.add('hidden');
+                localStorage.setItem('historyVisible', 'false');
+            }
+        });
+        
+        // Load current user's wishlist from Firebase on page load
+        if (window.db) {
+            const docRef = doc(window.db, 'users', currentUser.email);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                document.getElementById('wishlist').value = data.wishlist || '';
+                currentUser = data; // Update local
+                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+            } else {
+                // If not in Firebase, save current user
+                await setDoc(doc(window.db, 'users', currentUser.email), currentUser);
+            }
+        }
     </script>
 </body>
 </html>
