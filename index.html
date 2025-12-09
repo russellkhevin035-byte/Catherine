@@ -10,7 +10,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
-        // Replace with your Firebase config
+        // Replace with your Firebase config (or leave as-is for localStorage fallback)
         const firebaseConfig = {
             apiKey: "YOUR_API_KEY",
             authDomain: "YOUR_PROJECT.firebaseapp.com",
@@ -20,10 +20,17 @@
             appId: "YOUR_APP_ID"
         };
 
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+        let db = null;
+        try {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            console.log("Firebase initialized successfully.");
+        } catch (error) {
+            console.error("Firebase init failed:", error);
+            alert("Firebase not set up. Using local storage only (no shared data).");
+        }
 
-        window.db = db;
+        window.db = db; // Make db available globally
     </script>
 </head>
 <body>
@@ -43,28 +50,46 @@
     <script>
         document.getElementById('userForm').addEventListener('submit', async function(e) {
             e.preventDefault();
+            console.log("Form submitted."); // Debug log
+            
             const name = document.getElementById('fullName').value;
             const email = document.getElementById('email').value;
-            
             const newUser = { name, email, wishlist: '' };
             
-            if (window.db) {
-                // Check if user exists in Firebase
-                const docRef = doc(window.db, 'users', email);
-                const docSnap = await getDoc(docRef);
-                if (docSnap.exists()) {
-                    alert('You are already registered! Redirecting...');
-                    localStorage.setItem('currentUser', JSON.stringify(docSnap.data()));
+            try {
+                if (window.db) {
+                    // Try Firebase
+                    const docRef = doc(window.db, 'users', email);
+                    const docSnap = await getDoc(docRef);
+                    if (docSnap.exists()) {
+                        alert('You are already registered! Redirecting...');
+                        localStorage.setItem('currentUser', JSON.stringify(docSnap.data()));
+                    } else {
+                        await setDoc(doc(window.db, 'users', email), newUser);
+                        localStorage.setItem('currentUser', JSON.stringify(newUser));
+                        alert('Registered with Firebase!');
+                    }
                 } else {
-                    await setDoc(doc(window.db, 'users', email), newUser);
-                    localStorage.setItem('currentUser', JSON.stringify(newUser));
+                    // Fallback to localStorage
+                    let users = JSON.parse(localStorage.getItem('christmasUsers')) || [];
+                    const existingUser = users.find(u => u.email === email);
+                    if (existingUser) {
+                        alert('You are already registered! Redirecting...');
+                        localStorage.setItem('currentUser', JSON.stringify(existingUser));
+                    } else {
+                        users.push(newUser);
+                        localStorage.setItem('christmasUsers', JSON.stringify(users));
+                        localStorage.setItem('currentUser', JSON.stringify(newUser));
+                        alert('Registered locally!');
+                    }
                 }
-            } else {
-                // Fallback to localStorage
+            } catch (error) {
+                console.error("Registration error:", error);
+                alert("Error registering. Using local storage. Details: " + error.message);
+                // Still proceed with localStorage
                 let users = JSON.parse(localStorage.getItem('christmasUsers')) || [];
                 const existingUser = users.find(u => u.email === email);
                 if (existingUser) {
-                    alert('You are already registered! Redirecting...');
                     localStorage.setItem('currentUser', JSON.stringify(existingUser));
                 } else {
                     users.push(newUser);
@@ -73,6 +98,8 @@
                 }
             }
             
+            // Always redirect
+            console.log("Redirecting to page2.html");
             window.location.href = 'page2.html';
         });
     </script>
